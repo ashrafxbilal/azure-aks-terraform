@@ -1,0 +1,6 @@
+rgname                 = "stage-bilal-rg"
+service_principal_name = "stage-bilal-spn"
+keyvault_name          = "stage-bilal-kv-101"
+SUB_ID = "e95e0e78-55c3-4db7-b1a6-3c36cb5c8b65"
+node_pool_name = "stagenp"
+cluster_name = "stage-bilal-cluster"

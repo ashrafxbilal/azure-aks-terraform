@@ -1,0 +1,6 @@
+rgname                 = "dev-bilal-rg"
+service_principal_name = "dev-bilal-spn"
+keyvault_name          = "dev-bilal-kv-101"
+SUB_ID = "e95e0e78-55c3-4db7-b1a6-3c36cb5c8b65"
+cluster_name = "dev-bilal-cluster"
+node_pool_name = "devnp"

@@ -1,0 +1,119 @@
+# Azure DevOps pipeline for infrastructure deployment
+trigger:
+  branches:
+    include:
+    - main
+    - feature/*
+  paths:
+    include:
+    - dev/*
+    - staging/*
+    - modules/*
+    - provider.tf
+    - output.tf
+
+variables:
+  - group: terraform-secrets
+
+stages:
+- stage: Validate
+  jobs:
+  - job: terraform_validate
+    pool:
+      name: self-hosted-agents
+      demands:
+      - agent.os -equals Darwin
+    steps:
+    - task: TerraformInstaller@0
+      inputs:
+        terraformVersion: '1.5.7'
+    
+    - task: TerraformTaskV4@4
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        commandOptions: '-migrate-state'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/dev'
+        backendServiceArm: 'Azure-Service-Connection'
+        backendAzureRmResourceGroupName: 'terraform-state-rg'
+        backendAzureRmStorageAccountName: 'tfdevbackend2025bilal'
+        backendAzureRmContainerName: 'tfstate'
+        backendAzureRmKey: 'dev.terraform.tfstate'
+    
+    - task: TerraformTaskV4@4
+      inputs:
+        provider: 'azurerm'
+        command: 'validate'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/dev'
+
+- stage: Dev_Deploy
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: terraform_apply_dev
+    environment: dev
+    pool:
+      name: self-hosted-agents
+      demands:
+      - agent.os -equals Darwin
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: TerraformInstaller@0
+            inputs:
+              terraformVersion: '1.5.7'
+          
+          - task: TerraformTaskV4@4
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              commandOptions: '-migrate-state'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/dev'
+              backendServiceArm: 'Azure-Service-Connection'
+              backendAzureRmResourceGroupName: 'terraform-state-rg'
+              backendAzureRmStorageAccountName: 'tfdevbackend2025bilal'
+              backendAzureRmContainerName: 'tfstate'
+              backendAzureRmKey: 'dev.terraform.tfstate'
+          
+          - task: TerraformTaskV4@4
+            inputs:
+              provider: 'azurerm'
+              command: 'apply'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/dev'
+              environmentServiceNameAzureRM: 'Azure-Service-Connection'
+
+- stage: Stage_Deploy
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: terraform_apply_stage
+    environment: stage
+    pool:
+      name: self-hosted-agents
+      demands:
+      - agent.os -equals Darwin
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: TerraformInstaller@0
+            inputs:
+              terraformVersion: '1.5.7'
+          
+          - task: TerraformTaskV4@4
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              commandOptions: '-migrate-state'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/staging'
+              backendServiceArm: 'Azure-Service-Connection'
+              backendAzureRmResourceGroupName: 'terraform-state-rg'
+              backendAzureRmStorageAccountName: 'tfstagebackend2025bilal'
+              backendAzureRmContainerName: 'tfstate'
+              backendAzureRmKey: 'staging.terraform.tfstate'
+          
+          - task: TerraformTaskV4@4
+            inputs:
+              provider: 'azurerm'
+              command: 'apply'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/staging'
+              environmentServiceNameAzureRM: 'Azure-Service-Connection'

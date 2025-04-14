@@ -1,0 +1,140 @@
+trigger: none
+
+parameters:
+- name: environment
+  type: string
+  values:
+  - dev
+  - stage
+  - prod
+  default: dev
+
+variables:
+  - name: terraformVersion
+    value: '1.5.7'
+  - name: environmentDir
+    ${{ if eq(parameters.environment, 'stage') }}:
+      value: 'staging'
+    ${{ if ne(parameters.environment, 'stage') }}:
+      value: '${{ parameters.environment }}'
+
+stages:
+- stage: Plan_Destroy
+  jobs:
+  - job: terraform_plan_destroy
+    pool:
+      name: self-hosted-agents
+      demands:
+      - agent.os -equals Darwin
+    steps:
+    - script: |
+        echo "Current directory: $(pwd)"
+        echo "Environment parameter: ${{ parameters.environment }}"
+        echo "Environment directory: $(environmentDir)"
+        ls -la $(System.DefaultWorkingDirectory)
+        if [ -d "$(System.DefaultWorkingDirectory)/$(environmentDir)" ]; then
+          echo "Environment directory exists"
+          ls -la $(System.DefaultWorkingDirectory)/$(environmentDir)
+        else
+          echo "Environment directory does not exist"
+          mkdir -p $(System.DefaultWorkingDirectory)/$(environmentDir)
+          echo "Created environment directory"
+        fi
+      displayName: 'Debug Environment'
+      
+    - task: TerraformInstaller@0
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: '$(terraformVersion)'
+    
+    - task: TerraformTaskV4@4
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        commandOptions: '-reconfigure'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/$(environmentDir)'
+        backendServiceArm: 'Azure-Service-Connection'
+        backendAzureRmResourceGroupName: 'terraform-state-rg'
+        backendAzureRmStorageAccountName: 'tf${{ parameters.environment }}backend2025bilal'
+        backendAzureRmContainerName: 'tfstate'
+        backendAzureRmKey: '${{ parameters.environment }}.terraform.tfstate'
+    
+    - task: TerraformTaskV4@4
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/$(environmentDir)'
+        environmentServiceNameAzureRM: 'Azure-Service-Connection'
+        commandOptions: '-destroy'
+        publishPlanResults: 'tfdestroy'
+
+- stage: Destroy
+  dependsOn: Plan_Destroy
+  condition: succeeded()
+  jobs:
+  - deployment: terraform_destroy
+    environment: ${{ parameters.environment }}
+    pool:
+      name: self-hosted-agents
+      demands:
+      - agent.os -equals Darwin
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              echo "Current directory: $(pwd)"
+              echo "Environment parameter: ${{ parameters.environment }}"
+              echo "Environment directory: $(environmentDir)"
+              if [ -d "$(System.DefaultWorkingDirectory)/$(environmentDir)" ]; then
+                echo "Environment directory exists"
+                ls -la $(System.DefaultWorkingDirectory)/$(environmentDir)
+              else
+                echo "Environment directory does not exist"
+                mkdir -p $(System.DefaultWorkingDirectory)/$(environmentDir)
+                echo "Created environment directory"
+              fi
+            displayName: 'Debug Environment'
+            
+          - task: TerraformInstaller@0
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(terraformVersion)'
+          
+          - task: TerraformTaskV4@4
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              commandOptions: '-reconfigure'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/$(environmentDir)'
+              backendServiceArm: 'Azure-Service-Connection'
+              backendAzureRmResourceGroupName: 'terraform-state-rg'
+              backendAzureRmStorageAccountName: 'tf${{ parameters.environment }}backend2025bilal'
+              backendAzureRmContainerName: 'tfstate'
+              backendAzureRmKey: '${{ parameters.environment }}.terraform.tfstate'
+          
+          - task: TerraformTaskV4@4
+            inputs:
+              provider: 'azurerm'
+              command: 'destroy'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/$(environmentDir)'
+              environmentServiceNameAzureRM: 'Azure-Service-Connection'
+          - task: AzureCLI@2
+            displayName: 'Verify Resource Deletion'
+            inputs:
+              azureSubscription: 'Azure-Service-Connection'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "Checking if resource groups still exist..."
+                RG_EXISTS=$(az group exists --name ${{ parameters.environment }}-bilal-rg)
+                NRG_EXISTS=$(az group exists --name ${{ parameters.environment }}-bilal-rg-nrg)
+                
+                if [ "$RG_EXISTS" = "true" ] || [ "$NRG_EXISTS" = "true" ]; then
+                  echo "Resource groups still exist. Forcing deletion..."
+                  az group delete --name ${{ parameters.environment }}-bilal-rg --yes --no-wait || true
+                  az group delete --name ${{ parameters.environment }}-bilal-rg-nrg --yes --no-wait || true
+                  echo "Deletion commands issued."
+                else
+                  echo "Resource groups have been successfully deleted."
+                fi
