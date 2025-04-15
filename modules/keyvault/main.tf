@@ -16,7 +16,7 @@ resource "azurerm_key_vault" "kv" {
 resource "azurerm_key_vault_access_policy" "pipeline_sp" {
   key_vault_id = azurerm_key_vault.kv.id
   tenant_id    = data.azurerm_client_config.current.tenant_id
-  object_id    = "716e41b0-17ef-4e4a-844a-f4d25cbda1f1"  # Pipeline SP object ID
+  object_id    = "00000000-0000-0000-0000-000000000000"  # Pipeline SP object ID
 
   secret_permissions = [
     "Get", "List", "Set", "Delete", "Purge"
